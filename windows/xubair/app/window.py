@@ -80,6 +80,7 @@ class CharacterWindow:
         self.on_end_drag: Optional[Callable[[Point], None]] = None
         self.on_right_click: Optional[Callable[[int, int], None]] = None
         self.on_pinch: Optional[Callable[[float], None]] = None
+        self.on_file_hover: Optional[Callable[[bool], None]] = None
         self.feet_on_screen: Optional[Callable[[], Point]] = None
 
         self._tracker = VelocityTracker()
@@ -188,56 +189,43 @@ class CharacterWindow:
         if self.on_pinch:
             self.on_pinch((1 if event.delta > 0 else -1) * 0.08)
 
-    # ── OS file drop (Windows WM_DROPFILES) ─────────────────────────────────────
+    # ── OS file drop (via tkinterdnd2, the proper tested path) ──────────────────
 
     def enable_file_drop(self, on_files):
-        """Accept files dropped onto his body. Only file *paths* are read; files are never opened."""
-        if not sys.platform.startswith("win"):
-            return
-        import ctypes
-        self.top.update_idletasks()
+        """Accept files dropped onto his body. Only file *paths* are read; files are never opened.
+        Uses tkinterdnd2 when the root is a TkinterDnD.Tk; a no-op otherwise (never crashes)."""
         try:
-            hwnd = self.top.winfo_id()
-        except tk.TclError:
+            from tkinterdnd2 import DND_FILES
+        except Exception:
             return
-        shell32 = ctypes.windll.shell32
-        user32 = ctypes.windll.user32
-        shell32.DragAcceptFiles(ctypes.c_void_p(hwnd), True)
+        target = self.canvas
+        if not hasattr(target, "drop_target_register"):
+            return  # root was not created as a TkinterDnD.Tk
 
-        WM_DROPFILES = 0x0233
-        GWLP_WNDPROC = -4
-        LRESULT = ctypes.c_ssize_t
-        WNDPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_void_p, ctypes.c_uint,
-                                     ctypes.c_size_t, ctypes.c_ssize_t)
-        set_long = getattr(user32, "SetWindowLongPtrW", None) or user32.SetWindowLongW
-        set_long.restype = ctypes.c_void_p
-        set_long.argtypes = [ctypes.c_void_p, ctypes.c_int, WNDPROC]
-        call_wndproc = user32.CallWindowProcW
-        call_wndproc.restype = LRESULT
-        call_wndproc.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint,
-                                 ctypes.c_size_t, ctypes.c_ssize_t]
-        self._old_wndproc = ctypes.c_void_p()
+        def on_drop(event):
+            try:
+                paths = list(self.top.tk.splitlist(event.data))
+            except Exception:
+                paths = [event.data]
+            paths = [p for p in paths if p]
+            if paths and on_files:
+                on_files(paths)
+            return event.action
 
-        def handler(h, msg, wparam, lparam):
-            if msg == WM_DROPFILES:
-                try:
-                    hdrop = ctypes.c_void_p(wparam)
-                    count = shell32.DragQueryFileW(hdrop, 0xFFFFFFFF, None, 0)
-                    paths = []
-                    for i in range(count):
-                        length = shell32.DragQueryFileW(hdrop, i, None, 0)
-                        buf = ctypes.create_unicode_buffer(length + 1)
-                        shell32.DragQueryFileW(hdrop, i, buf, length + 1)
-                        if buf.value:
-                            paths.append(buf.value)
-                    shell32.DragFinish(hdrop)
-                    if paths and on_files:
-                        on_files(paths)
-                except Exception:
-                    pass
-                return 0
-            return call_wndproc(self._old_wndproc, h, msg, wparam, lparam)
+        def on_enter(event):
+            if self.on_file_hover:
+                self.on_file_hover(True)
+            return event.action
 
-        self._wndproc_ref = WNDPROC(handler)  # keep a reference alive
-        self._old_wndproc = ctypes.c_void_p(set_long(ctypes.c_void_p(hwnd), GWLP_WNDPROC,
-                                                      self._wndproc_ref))
+        def on_leave(event):
+            if self.on_file_hover:
+                self.on_file_hover(False)
+            return event.action
+
+        try:
+            target.drop_target_register(DND_FILES)
+            target.dnd_bind("<<Drop>>", on_drop)
+            target.dnd_bind("<<DropEnter>>", on_enter)
+            target.dnd_bind("<<DropLeave>>", on_leave)
+        except Exception:
+            pass

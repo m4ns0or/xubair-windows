@@ -38,10 +38,13 @@ jobs:
         run: |
           Set-Location windows
           pyinstaller build.spec
+          pyinstaller build_debug.spec
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: Xubair-Windows
-          path: windows/dist/Xubair.exe
+          path: |
+            windows/dist/Xubair.exe
+            windows/dist/Xubair-debug.exe
           if-no-files-found: error

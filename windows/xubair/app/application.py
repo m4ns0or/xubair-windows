@@ -14,6 +14,7 @@ from ..core.brain import BehaviorConfig, CharacterBrain, WorldInput
 from ..core.rare_events import RareEvent
 from ..core.types import Bounds, Point
 from ..core.world import ItemKind
+from .platforms import PlatformScanner
 from .prefs import SCALE_RANGE, SPEED_RANGE, Preferences
 from .sensors import EnvironmentSensor, classify_files
 from .tray import Tray
@@ -38,6 +39,15 @@ def _work_area() -> Tuple[int, int, int, int]:
     return (0, 0, 1440, 820)
 
 
+def _make_root() -> tk.Tk:
+    """Create the Tk root, with tkinterdnd2 drag-drop support when available."""
+    try:
+        from tkinterdnd2 import TkinterDnD
+        return TkinterDnD.Tk()
+    except Exception:
+        return tk.Tk()
+
+
 def _cursor_pos() -> Optional[Tuple[int, int]]:
     if IS_WIN:
         class POINT(ctypes.Structure):
@@ -51,7 +61,7 @@ def _cursor_pos() -> Optional[Tuple[int, int]]:
 class Application:
     def __init__(self):
         self.prefs = Preferences()
-        self.root = tk.Tk()
+        self.root = _make_root()
         self.root.withdraw()
         try:
             self.root.title("Xubair")
@@ -78,6 +88,8 @@ class Application:
         self._wire_window()
         self.window.enable_file_drop(self._on_files_dropped)
         self.sensors = EnvironmentSensor()
+        self.scanner = PlatformScanner()
+        self._own_hwnds = set()
 
         self._last_tick = time.monotonic()
         self._last_env = 0.0
@@ -165,6 +177,8 @@ class Application:
         w.on_end_drag = self._end_drag
         w.on_right_click = self._popup_menu
         w.on_pinch = self._pinch
+        w.on_file_hover = lambda entered: (self.brain.file_hover_began() if entered
+                                           else self.brain.file_hover_ended())
 
     def _end_drag(self, velocity_screen: Point):
         # Screen velocity is y-down; brain y is up, so negate y.
@@ -214,8 +228,9 @@ class Application:
         cur = _cursor_pos()
         cursor = self._screen_to_brain(*cur) if cur else None
         speed = 0.0 if self.prefs.paused else self.prefs.animationSpeed
+        platforms = self._scan_platforms(now, height)
         frame = self.brain.tick(WorldInput(dt=dt, bounds=self._bounds(), cursor=cursor,
-                                           height=height, speed=speed, platforms=[]))
+                                           height=height, speed=speed, platforms=platforms))
 
         for cue in frame.sounds:
             self._play_sound(cue)
@@ -246,6 +261,22 @@ class Application:
                 CharacterState.panic, CharacterState.climbing, CharacterState.playing):
             return 30
         return 20
+
+    def _scan_platforms(self, now: float, height: float):
+        if not (self.prefs.perchOnWindows and self.prefs.gravity) or self._hidden:
+            self.scanner.clear()
+            return []
+        if not self._own_hwnds:
+            try:
+                self._own_hwnds = {int(self.window.top.winfo_id()), int(self.root.winfo_id())}
+            except Exception:
+                self._own_hwnds = set()
+        from ..core.types import CharacterState
+        fast = (self.brain.isPerched or self.brain.state in (
+            CharacterState.climbing, CharacterState.thrown, CharacterState.falling))
+        interval = 0.3 if fast else 1.0
+        self.scanner.refresh_if_needed(now, interval, height, self._work, self._own_hwnds)
+        return self.scanner.platforms
 
     def _check_focus(self, now: float):
         if self._focus_deadline is not None and now >= self._focus_deadline:
@@ -329,6 +360,7 @@ class Application:
             focus.add_command(label="Start 25-Minute Focus", command=lambda: self.start_focus(25))
             focus.add_command(label="Start 50-Minute Focus", command=lambda: self.start_focus(50))
         m.add_cascade(label="Focus Buddy", menu=focus)
+        m.add_command(label="Performance Review…", command=self.open_review)
         m.add_command(label="⏰  Remind Me…", command=self.remind_me)
         m.add_command(label="🎒  His Pocket…", command=lambda: self.brain.open_pocket(0))
         m.add_command(label="Reset Position", command=self.reset_position)
@@ -399,6 +431,15 @@ class Application:
             self.toggle_hidden()
         b = self._bounds()
         self.brain.place(Point(b.width / 2, 60), b)
+
+    def open_review(self):
+        try:
+            from .review_window import open_review
+            open_review(self.root, self.brain.stats, self.brain.needs,
+                        set(self.brain.unlockedAchievements), self.brain.mood,
+                        self.prefs.get("hireDate") or time.time())
+        except Exception:
+            pass
 
     def start_focus(self, minutes: int):
         self._focus_minutes = minutes

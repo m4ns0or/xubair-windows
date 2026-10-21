@@ -1,14 +1,27 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Builds the full-parity Xubair.exe. The Sprites folder must sit next to this file at build
 # time (the GitHub Actions workflow copies it from ../Resources/Sprites).
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
+
+datas = [('Sprites', 'Sprites')]
+binaries = []
+hiddenimports = ['PIL._tkinter_finder', 'pystray._win32', 'psutil']
+
+# tkinterdnd2 ships the native tkdnd library; collect everything it needs.
+for pkg in ('tkinterdnd2',):
+    d, b, h = collect_all(pkg)
+    datas += d
+    binaries += b
+    hiddenimports += h
 
 a = Analysis(
     ['run_xubair.py'],
     pathex=[],
-    binaries=[],
-    datas=[('Sprites', 'Sprites')],
-    hiddenimports=['PIL._tkinter_finder', 'pystray._win32'],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
@@ -27,9 +40,9 @@ exe = EXE(
     name='Xubair',
     debug=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,       # no terminal window
-    icon=None,           # supply a .ico here if you have one
+    icon=None,
 )
