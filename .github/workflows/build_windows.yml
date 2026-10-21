@@ -1,0 +1,41 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:       # lets you trigger it manually from the GitHub UI
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pillow pyinstaller
+
+      - name: Copy sprites into windows folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path windows\Sprites | Out-Null
+          Copy-Item -Recurse -Force Resources\Sprites\* windows\Sprites\
+
+      - name: Build EXE with PyInstaller
+        shell: pwsh
+        run: |
+          Set-Location windows
+          pyinstaller build.spec
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Xubair-Windows
+          path: windows/dist/Xubair.exe
+          if-no-files-found: error
