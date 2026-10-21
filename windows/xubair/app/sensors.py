@@ -199,7 +199,20 @@ def _read_clipboard_text() -> str:
     CF_UNICODETEXT = 13
     u = ctypes.windll.user32
     k = ctypes.windll.kernel32
-    if not u.OpenClipboard(0):
+    # Declare pointer-returning calls as c_void_p, or 64-bit handles get truncated and crash.
+    u.OpenClipboard.argtypes = [ctypes.c_void_p]
+    u.OpenClipboard.restype = ctypes.c_int
+    u.IsClipboardFormatAvailable.argtypes = [ctypes.c_uint]
+    u.IsClipboardFormatAvailable.restype = ctypes.c_int
+    u.GetClipboardData.argtypes = [ctypes.c_uint]
+    u.GetClipboardData.restype = ctypes.c_void_p
+    k.GlobalLock.argtypes = [ctypes.c_void_p]
+    k.GlobalLock.restype = ctypes.c_void_p
+    k.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    try:
+        if not u.OpenClipboard(None):
+            return ""
+    except Exception:
         return ""
     try:
         if not u.IsClipboardFormatAvailable(CF_UNICODETEXT):
@@ -211,9 +224,11 @@ def _read_clipboard_text() -> str:
         if not ptr:
             return ""
         try:
-            return ctypes.c_wchar_p(ptr).value or ""
+            return ctypes.wstring_at(ptr)
         finally:
             k.GlobalUnlock(handle)
+    except Exception:
+        return ""
     finally:
         u.CloseClipboard()
 

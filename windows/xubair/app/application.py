@@ -104,7 +104,10 @@ class Application:
         self.window.set_topmost(self.prefs.alwaysOnTop)
 
         # Greet once a day.
-        self.brain.update_environment(self.sensors.sample())
+        try:
+            self.brain.update_environment(self.sensors.sample())
+        except Exception:
+            pass
         self.brain.greet()
 
         self._menu = self._build_menu()
