@@ -1,12 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
+# Builds the full-parity Xubair.exe. The Sprites folder must sit next to this file at build
+# time (the GitHub Actions workflow copies it from ../Resources/Sprites).
 block_cipher = None
 
 a = Analysis(
-    ['xubair_win.py'],
+    ['run_xubair.py'],
     pathex=[],
     binaries=[],
     datas=[('Sprites', 'Sprites')],
-    hiddenimports=['PIL._tkinter_finder'],
+    hiddenimports=['PIL._tkinter_finder', 'pystray._win32'],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],

@@ -19,13 +19,19 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pillow pyinstaller
+        run: pip install -r windows/requirements.txt
 
       - name: Copy sprites into windows folder
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path windows\Sprites | Out-Null
           Copy-Item -Recurse -Force Resources\Sprites\* windows\Sprites\
+
+      - name: Smoke-test the behavior core
+        shell: pwsh
+        run: |
+          Set-Location windows
+          python tests/smoke_core.py
 
       - name: Build EXE with PyInstaller
         shell: pwsh
